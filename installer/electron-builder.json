@@ -1,0 +1,26 @@
+{
+  "appId": "dev.clearwater.launcher",
+  "productName": "Cleanwater Launcher",
+  "directories": {
+    "output": "../installer/dist"
+  },
+  "files": ["src/**"],
+  "extraResources": [
+    {"from": "../LICENSE", "to": "LICENSE-Clearwater.txt"}
+  ],
+  "win": {
+    "target": "nsis",
+    "icon": "src/ui/assets/clearwater.ico",
+    "signExecutable": false,
+    "artifactName": "Cleanwater-Launcher-Setup-${version}-Windows-x64.exe"
+  },
+  "nsis": {
+    "oneClick": true,
+    "perMachine": false,
+    "createDesktopShortcut": "always",
+    "createStartMenuShortcut": true,
+    "shortcutName": "Cleanwater Launcher",
+    "runAfterFinish": true,
+    "deleteAppDataOnUninstall": false
+  }
+}

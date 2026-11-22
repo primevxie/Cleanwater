@@ -1,0 +1,19 @@
+{
+  "name": "cleanwater-launcher",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Windows launcher for Clearwater Client",
+  "author": "Clearwater",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "installer": "electron-builder --config ../installer/electron-builder.json --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "adm-zip": "0.5.16"
+  },
+  "devDependencies": {
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0"
+  }
+}

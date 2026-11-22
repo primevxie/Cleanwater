@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cleanwater Launcher</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="renderer.js" defer></script>
+</head>
+<body>
+    <main>
+        <header class="game">
+            <img class="game-icon" src="assets/clearwater.ico" alt="" width="48" height="48">
+            <div>
+                <h1>Clearwater</h1>
+                <p><span id="game-version">Minecraft 26.3</span><span aria-hidden="true"> · </span>Fabric</p>
+            </div>
+        </header>
+
+        <div class="profile-row">
+            <div>
+                <div class="label">Offline profile</div>
+                <strong id="profile-name">Set username</strong>
+            </div>
+            <button id="edit-profile" class="secondary">Edit username</button>
+        </div>
+
+        <section class="launch" aria-label="Launch Clearwater">
+            <div class="launch-row">
+                <div class="status-copy">
+                    <div id="status" role="status" aria-live="polite">Ready to install</div>
+                    <div id="detail">Minecraft and mods download on first launch.</div>
+                </div>
+                <div class="actions">
+                    <button id="cancel" class="secondary" hidden>Cancel</button>
+                    <button id="launch" class="primary"><span>Install and play</span></button>
+                </div>
+            </div>
+            <div id="progress-track" role="progressbar" aria-label="Installation progress" aria-valuemin="0" aria-valuemax="100" hidden><div id="progress-fill"></div></div>
+        </section>
+
+        <footer>
+            <button id="profile-folder" class="link">Open game folder</button>
+            <button id="open-log" class="link" hidden>Open game log</button>
+        </footer>
+    </main>
+
+    <dialog id="onboarding" aria-labelledby="account-heading">
+        <form id="account-form">
+            <h2 id="account-heading">Set your offline username</h2>
+            <label for="username">Username</label>
+            <input id="username" name="username" spellcheck="false" autocomplete="off" maxlength="16" aria-describedby="username-help">
+            <div id="username-help">3–16 letters, numbers, or underscores.</div>
+            <p>Have a premium Microsoft account? Click your username in Clearwater’s main menu to add it in the in-game Alt Manager.</p>
+            <div class="dialog-actions">
+                <button class="secondary" type="button" id="dismiss-profile">Cancel</button>
+                <button id="continue" class="primary" type="submit">Continue</button>
+            </div>
+        </form>
+    </dialog>
+</body>
+</html>
