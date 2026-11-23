@@ -10,9 +10,24 @@ const dismiss = ui('dismiss-profile');
 const cancel = ui('cancel');
 const edit = ui('edit-profile');
 const log = ui('open-log');
+const restart = ui('restart-launcher');
 let username = '';
 let installedVersion;
 let busy = false;
+let launcherUpdate = {stage: 'idle'};
+
+function renderLauncherUpdate(state = launcherUpdate) {
+    launcherUpdate = state;
+    const visible = state.stage !== 'idle';
+    ui('launcher-update').hidden = !visible;
+    if (!visible) return;
+    const text = state.stage === 'installing' ? 'Installing launcher update…'
+        : state.stage === 'ready' ? `Launcher ${state.version} will install when you close.`
+            : `Downloading launcher ${state.version}${state.percent == null ? '…' : ' · ' + state.percent + '%'}`;
+    ui('launcher-update-detail').textContent = text;
+    restart.hidden = state.stage !== 'ready';
+    restart.disabled = busy;
+}
 
 function showProfile() {
     const action = username ? 'Close username settings' : 'Close launcher';
@@ -50,8 +65,8 @@ function render(state) {
     ui('status').textContent = state.label || (installedVersion ? 'Ready to play' : 'Ready to install');
     ui('detail').textContent = working
         ? [state.detail, progress + '%'].filter(Boolean).join(' · ')
-        : failed ? (state.gameLog ? 'Open the game log for details.' : 'You can retry the installation.')
-            : installedVersion ? 'Clearwater ' + installedVersion : 'Minecraft and dependencies install on first launch.';
+        : state.detail || (failed ? (state.gameLog ? 'Open the game log for details.' : 'You can retry the installation.')
+            : installedVersion ? 'Clearwater ' + installedVersion : 'Minecraft and dependencies install on first launch.');
     ui('progress-track').hidden = !working;
     ui('progress-track').setAttribute('aria-valuenow', progress);
     ui('progress-fill').style.setProperty('--progress', progress / 100);
@@ -63,6 +78,7 @@ function render(state) {
     launchLabel.textContent = running ? 'Playing' : installedVersion ? 'Play' : failed ? 'Try again' : 'Install and play';
     edit.disabled = busy;
     ui('profile-name').textContent = username || 'Set username';
+    renderLauncherUpdate();
 }
 
 function fail(message) {
@@ -136,12 +152,15 @@ ui('profile-folder').addEventListener('click', async () => {
     }
 });
 log.addEventListener('click', () => window.clearwater.gameLog());
+restart.addEventListener('click', () => window.clearwater.restart());
 
 window.clearwater.onProgress(render);
+window.clearwater.onLauncherUpdate(renderLauncherUpdate);
 window.clearwater.state().then(state => {
     username = state.username;
     installedVersion = state.installedVersion;
     ui('game-version').textContent = 'Minecraft ' + state.minecraft;
+    renderLauncherUpdate(state.updateState);
     render(state.progress);
     if (!username) showProfile();
 }).catch(() => fail('Could not read your launcher profile.'));

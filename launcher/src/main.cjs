@@ -2,15 +2,17 @@ const {app, BrowserWindow, ipcMain, nativeTheme, shell} = require('electron');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const os = require('node:os');
-const {spawn} = require('node:child_process');
+const {execFile, spawn} = require('node:child_process');
+const {promisify} = require('node:util');
 const {pathToFileURL} = require('node:url');
 const {MINECRAFT, LOADER, prepare, validUsername} = require('./install.cjs');
-const {inside, readJson, saveJson} = require('./download.cjs');
+const {fileBusy, inside, readJson, saveJson} = require('./download.cjs');
+const {startSelfUpdate} = require('./self-update.cjs');
 
 const root = path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'ClearwaterLauncher');
 const settingsFile = inside(root, 'settings.json');
 const logFile = inside(root, 'launcher-game.log');
+const runArgs = inside(root, 'downloads/launch.args');
 const page = path.join(__dirname, 'ui', 'index.html');
 const pageUrl = pathToFileURL(page).href;
 let window;
@@ -20,6 +22,12 @@ let quitting = false;
 let username = '';
 let installedVersion;
 let progress = {stage: 'idle'};
+let updateState = {stage: 'idle'};
+let selfUpdate;
+const run = promisify(execFile);
+
+fs.mkdirSync(inside(root, 'desktop'), {recursive: true});
+app.setPath('userData', inside(root, 'desktop'));
 
 function update(state) {
     progress = state;
@@ -36,10 +44,39 @@ function handle(channel, action) {
 
 async function errorDetails(error) {
     await fsp.writeFile(inside(root, 'launcher-error.log'), String(error.stack || error), 'utf8').catch(() => {});
+    if (fileBusy(error)) return 'A game file is still in use. Close other Minecraft windows, then try again.';
+    if (error.syscall) return 'Could not access the launcher’s game files.';
     if (error instanceof TypeError && error.message === 'fetch failed') {
         return 'Could not reach the download servers. Try again when you’re online.';
     }
     return error.message;
+}
+
+async function profileInUse() {
+    const command = String.raw`
+        $file = $env:CLEARWATER_PROFILE_ARGS
+        Get-CimInstance Win32_Process -Filter "Name='java.exe' OR Name='javaw.exe'" |
+            Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($file, [StringComparison]::OrdinalIgnoreCase) -ge 0 } |
+            Select-Object -First 1 -ExpandProperty ProcessId
+    `;
+    try {
+        const {stdout} = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+            windowsHide: true, timeout: 5000, maxBuffer: 4096,
+            env: {...process.env, CLEARWATER_PROFILE_ARGS: runArgs}
+        });
+        return /\d/.test(stdout);
+    } catch {
+        return false;
+    }
+}
+
+function reportLauncherUpdate(state) {
+    updateState = state;
+    if (window && !window.isDestroyed()) window.webContents.send('clearwater:launcher-update', state);
+}
+
+function logUpdateError(message) {
+    fsp.appendFile(inside(root, 'launcher-update.log'), `${new Date().toISOString()} ${message}\n`).catch(() => {});
 }
 
 function launchGame(config) {
@@ -58,14 +95,23 @@ async function play() {
     const active = new AbortController();
     installation = active;
     try {
+        if (await profileInUse()) {
+            update({stage: 'error', label: 'Minecraft is already running.',
+                detail: 'Close the other Minecraft window before launching again.'});
+            return false;
+        }
+        active.signal.throwIfAborted();
         const ready = await prepare(root, username, active.signal, update);
+        if (ready.updateError) logUpdateError(ready.updateError);
         active.signal.throwIfAborted();
         installedVersion = ready.clientVersion;
         await saveJson(settingsFile, {username, installedVersion});
         active.signal.throwIfAborted();
         const child = launchGame(ready);
         game = child;
-        child.once('spawn', () => update({stage: 'running', label: 'Minecraft is running', clientVersion: installedVersion}));
+        child.once('spawn', () => update({stage: 'running', label: 'Minecraft is running',
+            clientVersion: installedVersion,
+            detail: ready.updateError ? `Using Clearwater ${installedVersion}. The update will retry next launch.` : undefined}));
         child.once('error', async error => {
             if (game === child) game = null;
             update({stage: 'error', label: await errorDetails(error)});
@@ -97,7 +143,7 @@ async function createWindow() {
     window = new BrowserWindow({
         title: 'Cleanwater Launcher',
         width: 500,
-        height: 344,
+        height: 373,
         minWidth: 440,
         minHeight: 326,
         show: false,
@@ -134,7 +180,7 @@ if (!app.requestSingleInstanceLock()) {
         window.show();
         window.focus();
     });
-    handle('state', () => ({username, installedVersion, minecraft: MINECRAFT, fabric: LOADER, progress}));
+    handle('state', () => ({username, installedVersion, minecraft: MINECRAFT, fabric: LOADER, progress, updateState}));
     handle('username', async value => {
         if (!validUsername(value) || installation || game) return false;
         await saveJson(settingsFile, {username: value, installedVersion});
@@ -149,8 +195,12 @@ if (!app.requestSingleInstanceLock()) {
         return shell.openPath(profile);
     });
     handle('game-log', () => shell.openPath(logFile));
+    handle('restart', () => !installation && !game && selfUpdate?.restart());
     handle('close', () => window.close());
     app.on('before-quit', () => { quitting = true; });
     app.on('window-all-closed', () => app.quit());
-    app.whenReady().then(createWindow).catch(error => { console.error(error); app.quit(); });
+    app.whenReady().then(async () => {
+        await createWindow();
+        selfUpdate = startSelfUpdate(reportLauncherUpdate, error => logUpdateError(error.message));
+    }).catch(error => { console.error(error); app.quit(); });
 }

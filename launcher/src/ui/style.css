@@ -84,6 +84,18 @@ footer { display: flex; flex-wrap: wrap; gap: 0 13px; }
     background: none;
 }
 .link:hover:not(:disabled) { color: #e1ecfa; text-decoration: underline; }
+.launcher-update {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid var(--line);
+    margin-top: 8px;
+    padding-top: 8px;
+    color: var(--muted);
+    font-size: 12px;
+}
+#restart-launcher { flex: 0 0 auto; }
 dialog {
     width: min(365px, calc(100vw - 34px));
     max-height: calc(100vh - 20px);

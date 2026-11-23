@@ -7,6 +7,30 @@ const { pipeline } = require('node:stream/promises');
 const { setTimeout: delay } = require('node:timers/promises');
 
 const USER_AGENT = 'Clearwater-Launcher/1.0 (+https://github.com/primevxie/cleanwaterjars)';
+const BUSY_CODES = new Set(['EACCES', 'EBUSY', 'EPERM', 'EEXIST']);
+
+function fileBusy(error) {
+    return BUSY_CODES.has(error?.code);
+}
+
+async function replaceFile(temporary, destination, signal) {
+    for (let attempt = 0; ; attempt++) {
+        signal?.throwIfAborted();
+        try {
+            await fsp.rename(temporary, destination);
+            return;
+        } catch (error) {
+            if (!fileBusy(error) || attempt >= 6) throw error;
+            await delay(100 * Math.min(2 ** attempt, 6), undefined, {signal});
+        }
+    }
+}
+
+async function removeTemporary(file) {
+    await fsp.rm(file, {force: true}).catch(error => {
+        if (!fileBusy(error)) throw error;
+    });
+}
 
 function inside(root, name) {
     const target = path.resolve(root, name);
@@ -67,19 +91,19 @@ async function saveJson(file, value) {
     const temporary = file + '.' + randomUUID() + '.tmp';
     try {
         await fsp.writeFile(temporary, JSON.stringify(value, null, 2) + '\n');
-        await fsp.rename(temporary, file);
+        await replaceFile(temporary, file);
     } finally {
-        await fsp.rm(temporary, {force: true});
+        await removeTemporary(temporary);
     }
 }
 
-async function metadata(url, file, signal, {refresh = false, validate = () => true} = {}) {
+async function metadata(url, file, signal, {refresh = false, validate = () => true, timeout} = {}) {
     const cached = await readJson(file, null);
     const usable = cached && validate(cached);
     if (usable && !refresh) return cached;
     let value;
     try {
-        value = await request(url, signal, response => response.json());
+        value = await request(url, signal, response => response.json(), timeout);
     } catch (error) {
         signal?.throwIfAborted();
         if (usable) return cached;
@@ -103,13 +127,31 @@ async function matches(file, expected, size) {
     }
 }
 
+async function verifiedFile(file, {size, ...hashes}) {
+    return matches(file, checksum(hashes), size);
+}
+
+async function installVerifiedFile(source, destination, info, signal) {
+    signal?.throwIfAborted();
+    if (await verifiedFile(destination, info)) return;
+    await fsp.mkdir(path.dirname(destination), {recursive: true});
+    const temporary = destination + '.' + randomUUID() + '.part';
+    try {
+        await fsp.copyFile(source, temporary, fs.constants.COPYFILE_EXCL);
+        if (!await verifiedFile(temporary, info)) throw new Error('Clearwater failed verification after copying.');
+        await replaceFile(temporary, destination, signal);
+    } finally {
+        await removeTemporary(temporary);
+    }
+}
+
 async function ensureFile(root, name, {url, size, ...hashes}, signal, progress) {
     signal?.throwIfAborted();
     const file = inside(root, name);
     const expected = checksum(hashes);
     if (await matches(file, expected, size)) return file;
     await fsp.mkdir(path.dirname(file), {recursive: true});
-    const temporary = file + '.part';
+    const temporary = file + '.' + randomUUID() + '.part';
     try {
         await request(url, signal, async response => {
             const hash = createHash(expected.algorithm);
@@ -131,10 +173,10 @@ async function ensureFile(root, name, {url, size, ...hashes}, signal, progress) 
                 throw new Error(`Checksum verification failed for ${path.basename(file)}.`);
             }
         }, 300_000);
-        await fsp.rename(temporary, file);
+        await replaceFile(temporary, file, signal);
         return file;
     } finally {
-        await fsp.rm(temporary, {force: true});
+        await removeTemporary(temporary);
     }
 }
 
@@ -159,4 +201,6 @@ async function pool(items, limit, work, signal) {
     if (failure) throw failure;
 }
 
-module.exports = {ensureFile, inside, metadata, pool, readJson, request, saveJson};
+module.exports = {
+    ensureFile, fileBusy, inside, installVerifiedFile, metadata, pool, readJson, request, saveJson, verifiedFile
+};

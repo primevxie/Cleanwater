@@ -6,6 +6,8 @@ Download the x64 installer from [Releases](https://github.com/primevxie/Cleanwat
 
 Click your username on the in-game main menu to add a premium Microsoft account through the Alt Manager. The launcher uses the game profile at `%LOCALAPPDATA%\ClearwaterLauncher\profile`.
 
+The installed launcher checks GitHub for new launcher versions. It downloads updates in the background and applies them when you close the launcher. You can also restart from the update notice. Pressing **Play** checks for a newer Clearwater JAR and keeps the verified copy already installed if the update is temporarily unavailable or the file is busy.
+
 ## Source and build
 
 - [launcher](launcher) contains the Electron app and download code.

@@ -8,6 +8,11 @@
   "extraResources": [
     {"from": "../LICENSE", "to": "LICENSE-Clearwater.txt"}
   ],
+  "publish": {
+    "provider": "github",
+    "owner": "primevxie",
+    "repo": "Cleanwater"
+  },
   "win": {
     "target": "nsis",
     "icon": "src/ui/assets/clearwater.ico",

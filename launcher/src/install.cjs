@@ -3,7 +3,9 @@ const path = require('node:path');
 const os = require('node:os');
 const {createHash, randomUUID} = require('node:crypto');
 const Zip = require('adm-zip');
-const {ensureFile, inside, metadata, pool, readJson, request, saveJson} = require('./download.cjs');
+const {
+    ensureFile, fileBusy, inside, installVerifiedFile, metadata, pool, readJson, request, saveJson, verifiedFile
+} = require('./download.cjs');
 
 const MINECRAFT = '26.3';
 const LOADER = '0.20.1';
@@ -132,8 +134,76 @@ async function ensureLibrary(cache, lib, signal) {
     return ensureFile(cache, 'libraries/' + (lib.file.path || lib.relative), lib.file, signal);
 }
 
+async function clientRelease(cache, signal) {
+    const file = inside(cache, 'clearwater-release.json');
+    const previous = await readJson(file, null);
+    try {
+        const latest = await metadata(RELEASE, file, signal, {
+            refresh: true, validate: value => Boolean(runtimeRelease(value)), timeout: 9000
+        });
+        return {latest, previous};
+    } catch (error) {
+        signal.throwIfAborted();
+        return {previous, error};
+    }
+}
+
+function releaseInfo(asset) {
+    return {url: asset.browser_download_url, size: asset.size, sha256: asset.digest.slice(7)};
+}
+
+function clientVersion(file) {
+    const mod = JSON.parse(new Zip(file).readAsText('fabric.mod.json'));
+    if (mod.id !== 'clearwater' || mod.depends?.minecraft !== MINECRAFT || typeof mod.version !== 'string') {
+        throw new Error(`This Clearwater release requires a different Minecraft version. The launcher supports ${MINECRAFT}.`);
+    }
+    return mod.version;
+}
+
+async function verifiedClient(file, references) {
+    for (const reference of references) {
+        if (!reference || !/^[a-f0-9]{64}$/i.test(reference.sha256) ||
+            !Number.isSafeInteger(reference.size) || reference.size <= 0) continue;
+        if (await verifiedFile(file, reference)) return {version: clientVersion(file), info: reference};
+    }
+}
+
+async function rememberClient(file, previous, info) {
+    if (previous?.sha256 === info.sha256 && previous?.size === info.size) return;
+    try {
+        await saveJson(file, {sha256: info.sha256, size: info.size});
+    } catch (error) {
+        if (!error.syscall && !fileBusy(error)) throw error;
+    }
+}
+
+async function installClearwater(profile, cache, release, signal) {
+    const target = inside(profile, 'mods/clearwater.jar');
+    const recordPath = inside(cache, 'clearwater-installed.json');
+    const installed = await readJson(recordPath, null);
+    const oldAsset = runtimeRelease(release.previous);
+    try {
+        if (release.error) throw release.error;
+        const asset = runtimeRelease(release.latest);
+        const info = releaseInfo(asset);
+        let version = (await verifiedClient(target, [info]))?.version;
+        if (!version) {
+            const downloaded = await ensureFile(cache, `releases/${info.sha256}/${asset.name}`, info, signal);
+            version = clientVersion(downloaded);
+            await installVerifiedFile(downloaded, target, info, signal);
+        }
+        await rememberClient(recordPath, installed, info);
+        return {version};
+    } catch (error) {
+        signal.throwIfAborted();
+        const fallback = await verifiedClient(target, [installed, oldAsset && releaseInfo(oldAsset)]);
+        if (!fallback) throw error;
+        await rememberClient(recordPath, installed, fallback.info);
+        return {version: fallback.version, updateError: error.message};
+    }
+}
+
 async function installMods(profile, cache, release, signal) {
-    const releaseAsset = runtimeRelease(release);
     const files = await Promise.all(MODS.map(async ([name, id]) => {
         const mod = await metadata(`https://api.modrinth.com/v2/version/${id}`, inside(cache, `mods/${id}.json`), signal, {
             validate: value => value?.id === id && Array.isArray(value.files) && value.files.length > 0
@@ -142,23 +212,8 @@ async function installMods(profile, cache, release, signal) {
         return [name, {...file.hashes, url: file.url, size: file.size}];
     }));
 
-    const clearwater = await ensureFile(cache, `releases/${releaseAsset.name}`, {
-        url: releaseAsset.browser_download_url, size: releaseAsset.size, sha256: releaseAsset.digest.slice(7)
-    }, signal);
-    const mod = JSON.parse(new Zip(clearwater).readAsText('fabric.mod.json'));
-    if (mod.id !== 'clearwater' || mod.depends?.minecraft !== MINECRAFT) {
-        throw new Error(`The latest Clearwater release requires a different Minecraft version. This launcher supports ${MINECRAFT}.`);
-    }
     await pool(files, 3, ([name, info], _index, taskSignal) => ensureFile(profile, 'mods/' + name, info, taskSignal), signal);
-    const target = inside(profile, 'mods/clearwater.jar');
-    const temporary = target + '.part';
-    try {
-        await fs.copyFile(clearwater, temporary);
-        await fs.rename(temporary, target);
-    } finally {
-        await fs.rm(temporary, {force: true});
-    }
-    return mod.version;
+    return installClearwater(profile, cache, release, signal);
 }
 
 function argFileLine(arg) {
@@ -184,9 +239,7 @@ async function prepare(root, username, signal, notify) {
     emit('metadata', 'Checking files', 0.02);
     const [{vanilla, fabric}, release] = await Promise.all([
         profiles(cache, signal),
-        metadata(RELEASE, inside(cache, 'clearwater-release.json'), signal, {
-            refresh: true, validate: value => Boolean(runtimeRelease(value))
-        })
+        clientRelease(cache, signal)
     ]);
     const java = await javaExecutable(root, cache, vanilla.javaVersion.majorVersion, signal, emit);
     await fs.mkdir(profile, {recursive: true});
@@ -209,12 +262,12 @@ async function prepare(root, username, signal, notify) {
     const tasks = [...libraries.values()].map((lib, index) => async taskSignal => {
         classpath[index] = await ensureLibrary(cache, lib, taskSignal);
     });
-    let clientJar, indexPath, loggingFile, clientVersion;
+    let clientJar, indexPath, loggingFile, client;
     tasks.unshift(
         async taskSignal => { clientJar = await ensureFile(cache, `versions/${MINECRAFT}.jar`, vanilla.downloads.client, taskSignal); },
         async taskSignal => { indexPath = await ensureFile(assets, `indexes/${vanilla.assetIndex.id}.json`, vanilla.assetIndex, taskSignal); },
         async taskSignal => { loggingFile = await ensureFile(cache, `logging/${vanilla.logging.client.file.id}`, vanilla.logging.client.file, taskSignal); },
-        async taskSignal => { clientVersion = await installMods(profile, cache, release, taskSignal); }
+        async taskSignal => { client = await installMods(profile, cache, release, taskSignal); }
     );
     await pool(tasks, 16, async (task, _index, taskSignal) => { await task(taskSignal); tick(); }, signal);
 
@@ -253,7 +306,7 @@ async function prepare(root, username, signal, notify) {
     signal.throwIfAborted();
     await fs.writeFile(argsPath, args.map(argFileLine).join('\n') + '\n', 'utf8');
     emit('launch', 'Starting Minecraft', 1);
-    return {java, argsPath, profile, clientVersion};
+    return {java, argsPath, profile, clientVersion: client.version, updateError: client.updateError};
 }
 
 module.exports = {MINECRAFT, LOADER, offlineUuid, prepare, validUsername};
