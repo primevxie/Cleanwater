@@ -164,7 +164,7 @@ async function createWindow() {
         minHeight: 326,
         show: false,
         backgroundColor: '#202125',
-        icon: path.join(__dirname, 'ui', 'assets', 'clearwater.ico'),
+        icon: path.join(__dirname, 'ui', 'assets', process.platform === 'linux' ? 'clearwater.png' : 'clearwater.ico'),
         autoHideMenuBar: true,
         webPreferences: {
             preload: path.join(__dirname, 'preload.cjs'),

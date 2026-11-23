@@ -22,7 +22,7 @@
   "linux": {
     "target": "rpm",
     "executableName": "cleanwater-launcher",
-    "icon": "src/ui/assets/clearwater.ico",
+    "icon": "src/ui/assets/clearwater.png",
     "category": "Game",
     "artifactName": "cleanwater-launcher-linux-x86_64.rpm"
   },
