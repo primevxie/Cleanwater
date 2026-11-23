@@ -1,7 +1,9 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const {execFile} = require('node:child_process');
 const {createHash, randomUUID} = require('node:crypto');
+const {promisify} = require('node:util');
 const Zip = require('adm-zip');
 const {
     ensureFile, fileBusy, inside, installVerifiedFile, metadata, pool, readJson, request, saveJson, verifiedFile
@@ -10,6 +12,8 @@ const {
 const MINECRAFT = '26.3';
 const LOADER = '0.20.1';
 const LAUNCHER_VERSION = require('../package.json').version;
+const systemName = {win32: 'windows', linux: 'linux'}[process.platform];
+const run = promisify(execFile);
 const MANIFEST = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
 const FABRIC = `https://meta.fabricmc.net/v2/versions/loader/${MINECRAFT}/${LOADER}/profile/json`;
 const RELEASE = 'https://api.github.com/repos/primevxie/cleanwaterjars/releases/latest';
@@ -34,7 +38,7 @@ function rulesAllow(rules) {
     let allowed = false;
     for (const rule of rules) {
         const system = rule.os;
-        if (system?.name && system.name !== 'windows') continue;
+        if (system?.name && system.name !== systemName) continue;
         if (system?.arch && !new RegExp(system.arch).test('amd64')) continue;
         if (system?.version && !new RegExp(system.version).test(os.release())) continue;
         if (rule.features && Object.values(rule.features).some(Boolean)) continue;
@@ -78,10 +82,11 @@ async function profiles(cache, signal) {
 
 async function javaExecutable(root, cache, major, signal, emit) {
     const runtime = inside(root, `runtime/java-${major}`);
-    const executable = inside(runtime, 'bin/java.exe');
-    if (await fs.stat(executable).then(info => info.isFile(), () => false)) return executable;
+    const javaPath = systemName === 'linux' ? 'bin/java' : 'bin/java.exe';
+    const executable = inside(runtime, javaPath);
+    if (await fs.access(executable, fs.constants.X_OK).then(() => true, () => false)) return executable;
     emit('java', 'Downloading Java', 0.04);
-    const url = `https://api.adoptium.net/v3/assets/latest/${major}/hotspot?architecture=x64&heap_size=normal&image_type=jre&os=windows&vendor=eclipse`;
+    const url = `https://api.adoptium.net/v3/assets/latest/${major}/hotspot?architecture=x64&heap_size=normal&image_type=jre&os=${systemName}&vendor=eclipse`;
     const results = await metadata(url, inside(cache, `java-${major}.json`), signal, {
         validate: value => /^https:\/\/github\.com\/adoptium\/temurin\d+-binaries\/releases\/download\//.test(value?.[0]?.binary?.package?.link)
     });
@@ -93,16 +98,28 @@ async function javaExecutable(root, cache, major, signal, emit) {
     const stage = inside(root, 'runtime/stage-' + randomUUID());
     await fs.mkdir(stage, {recursive: true});
     try {
-        const zip = new Zip(archive);
-        for (const entry of zip.getEntries()) inside(stage, entry.entryName);
-        const javaEntry = zip.getEntries().find(entry => !entry.isDirectory && /(?:^|\/)bin\/java\.exe$/.test(entry.entryName));
-        if (!javaEntry) throw new Error('The Java archive did not include a Windows runtime.');
-        const extracted = path.dirname(path.dirname(inside(stage, javaEntry.entryName)));
-        await new Promise((resolve, reject) => zip.extractAllToAsync(stage, false, error => error ? reject(error) : resolve()));
+        if (systemName === 'linux') {
+            await run('tar', ['-xzf', archive, '-C', stage, '--no-same-owner', '--no-same-permissions'], {
+                signal, timeout: 120_000
+            });
+        } else {
+            const zip = new Zip(archive);
+            for (const entry of zip.getEntries()) inside(stage, entry.entryName);
+            await new Promise((resolve, reject) => zip.extractAllToAsync(stage, false, error => error ? reject(error) : resolve()));
+        }
+        let extracted;
+        for (const entry of await fs.readdir(stage, {withFileTypes: true})) {
+            if (!entry.isDirectory()) continue;
+            if (await fs.access(inside(stage, entry.name + '/' + javaPath), fs.constants.X_OK).then(() => true, () => false)) {
+                extracted = inside(stage, entry.name);
+                break;
+            }
+        }
+        if (!extracted) throw new Error('The Java archive did not include a usable runtime.');
         signal.throwIfAborted();
         await fs.rm(runtime, {recursive: true, force: true});
         await fs.rename(extracted, runtime);
-        await fs.access(executable);
+        await fs.access(executable, fs.constants.X_OK);
         return executable;
     } finally {
         await fs.rm(stage, {recursive: true, force: true});
@@ -222,7 +239,7 @@ function argFileLine(arg) {
 
 async function prepare(root, username, signal, notify) {
     if (!validUsername(username)) throw new Error('Use 3–16 letters, numbers, or underscores for your username.');
-    if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('This build requires 64-bit Windows.');
+    if (!systemName || process.arch !== 'x64') throw new Error('Cleanwater requires Windows or Linux on an x86-64 processor.');
     const profile = inside(root, 'profile');
     const cache = inside(root, 'downloads');
     let lastUpdate = 0;

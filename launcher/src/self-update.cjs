@@ -2,7 +2,7 @@ const {app} = require('electron');
 const {autoUpdater} = require('electron-updater');
 
 function startSelfUpdate(report, logError) {
-    if (!app.isPackaged) return null;
+    if (!app.isPackaged || process.platform !== 'win32') return null;
 
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;

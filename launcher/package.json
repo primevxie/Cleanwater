@@ -1,13 +1,16 @@
 {
   "name": "cleanwater-launcher",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
-  "description": "Windows launcher for Clearwater Client",
+  "description": "Desktop launcher for Clearwater Client",
   "author": "Clearwater",
+  "homepage": "https://kryonix.lol/download/clearwater",
+  "license": "MIT",
   "main": "src/main.cjs",
   "scripts": {
     "start": "electron .",
-    "installer": "electron-builder --config ../installer/electron-builder.json --win nsis --x64 --publish never"
+    "installer": "electron-builder --config ../installer/electron-builder.json --win nsis --x64 --publish never",
+    "installer:linux": "electron-builder --config ../installer/electron-builder.json --linux rpm --x64 --publish never"
   },
   "dependencies": {
     "adm-zip": "0.5.16",

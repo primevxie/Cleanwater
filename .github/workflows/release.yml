@@ -1,0 +1,106 @@
+name: Release launcher
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-release
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+      - name: Build RPM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+          npm run installer:linux
+      - name: Install and open the RPM on Fedora
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE/installer/dist:/dist:ro" fedora:44 bash -euc '
+            dnf -y install /dist/cleanwater-launcher-linux-x86_64.rpm xorg-x11-server-Xvfb
+            rpm -q cleanwater-launcher
+            test -x "$(command -v cleanwater-launcher)"
+            test -f /usr/share/applications/cleanwater-launcher.desktop
+            Xvfb :99 -screen 0 1024x768x24 &
+            export DISPLAY=:99
+            sleep 1
+            cleanwater-launcher --no-sandbox --disable-gpu --remote-debugging-port=9222 > /tmp/launcher.log 2>&1 &
+            for attempt in $(seq 1 30); do
+              if curl --silent --fail http://127.0.0.1:9222/json/list | grep -q "Cleanwater Launcher"; then
+                exit 0
+              fi
+              sleep 1
+            done
+            cat /tmp/launcher.log
+            exit 1
+          '
+      - name: Prepare and verify Minecraft and Java
+        run: node ../installer/smoke-linux.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-rpm
+          path: installer/dist/cleanwater-launcher-linux-x86_64.rpm
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2025
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+      - run: npm run installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-windows
+          path: |
+            installer/dist/Cleanwater-Launcher-Setup-*-Windows-x64.exe
+            installer/dist/Cleanwater-Launcher-Setup-*-Windows-x64.exe.blockmap
+            installer/dist/latest.yml
+          if-no-files-found: error
+
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: launcher-*
+          merge-multiple: true
+          path: release
+      - name: Publish tested packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./launcher/package.json').version")"
+          tag="v$version"
+          windows="release/Cleanwater-Launcher-Setup-$version-Windows-x64.exe"
+          gh release create "$tag" --draft --target "$GITHUB_SHA" \
+            --title "Cleanwater Launcher $version" \
+            --notes 'Install on Fedora or Nobara with the x86-64 RPM. The Windows installer and update files are included. See the README for terminal instructions.' \
+            "$windows" "$windows.blockmap" release/latest.yml release/cleanwater-launcher-linux-x86_64.rpm
+          gh release edit "$tag" --draft=false --latest

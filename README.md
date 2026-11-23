@@ -1,16 +1,30 @@
 # Cleanwater Launcher
 
-Cleanwater is a Windows desktop launcher for Clearwater Client on Minecraft Java Edition 26.3.
+Cleanwater is a desktop launcher for Clearwater Client on Minecraft Java Edition 26.3.
 
-Download the x64 installer from [Releases](https://github.com/primevxie/Cleanwater/releases/latest). It installs for your Windows user and adds **Cleanwater Launcher** shortcuts to the desktop and Start menu. Open the launcher, enter an offline username, and select **Install and play**. The first launch downloads Minecraft, Java, Fabric, the required mods, and the current Clearwater JAR.
+## Fedora and Nobara
 
-Click your username on the in-game main menu to add a premium Microsoft account through the Alt Manager. The launcher uses the game profile at `%LOCALAPPDATA%\ClearwaterLauncher\profile`.
+On x86-64, open Konsole or Terminal and run the following command.
 
-The installed launcher checks GitHub for new launcher versions. It downloads updates in the background and applies them when you close the launcher. You can also restart from the update notice. Pressing **Play** checks for a newer Clearwater JAR and keeps the verified copy already installed if the update is temporarily unavailable or the file is busy.
+```bash
+sudo dnf install 'https://github.com/primevxie/Cleanwater/releases/latest/download/cleanwater-launcher-linux-x86_64.rpm'
+```
+
+Open **Cleanwater Launcher** from the app menu or run `cleanwater-launcher`. Run the install command again to update the launcher. Remove it with `sudo dnf remove cleanwater-launcher`. The game profile lives under `$XDG_CONFIG_HOME/ClearwaterLauncher/profile`, with `~/.config` as the default.
+
+## Windows
+
+Download the x64 installer from [Releases](https://github.com/primevxie/Cleanwater/releases/latest). It installs for your Windows user and adds **Cleanwater Launcher** shortcuts to the desktop and Start menu. The game profile lives under `%LOCALAPPDATA%\ClearwaterLauncher\profile`. The Windows launcher downloads its own updates and applies them on exit.
+
+## First launch
+
+Enter an offline username and select **Install and play**. The launcher downloads Minecraft, Java, Fabric, the required mods, and Clearwater. Click your username in Clearwater’s main menu to add a Microsoft account through the in-game Alt Manager.
+
+On both platforms, **Play** checks for a new Clearwater JAR and keeps the verified copy already installed if an update is temporarily unavailable or the file is busy.
 
 ## Source and build
 
 - [launcher](launcher) contains the Electron app and download code.
-- [installer](installer) contains the Windows installer configuration.
+- [installer](installer) contains the Windows and Linux packaging configuration.
 
 From `launcher`, run `npm ci` and then `npm start` for development. See [installer build instructions](installer/README.md) to package the app.

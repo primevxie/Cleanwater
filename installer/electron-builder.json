@@ -19,6 +19,20 @@
     "signExecutable": false,
     "artifactName": "Cleanwater-Launcher-Setup-${version}-Windows-x64.exe"
   },
+  "linux": {
+    "target": "rpm",
+    "executableName": "cleanwater-launcher",
+    "icon": "src/ui/assets/clearwater.ico",
+    "category": "Game",
+    "artifactName": "cleanwater-launcher-linux-x86_64.rpm"
+  },
+  "rpm": {
+    "maintainer": "Clearwater",
+    "depends": [
+      "gtk3", "nss", "alsa-lib", "libnotify", "libXScrnSaver", "libXtst", "libuuid",
+      "mesa-libgbm", "mesa-dri-drivers", "xdg-utils", "at-spi2-core", "tar", "gzip"
+    ]
+  },
   "nsis": {
     "oneClick": true,
     "perMachine": false,

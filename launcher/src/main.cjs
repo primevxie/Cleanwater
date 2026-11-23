@@ -9,7 +9,8 @@ const {MINECRAFT, LOADER, prepare, validUsername} = require('./install.cjs');
 const {fileBusy, inside, readJson, saveJson} = require('./download.cjs');
 const {startSelfUpdate} = require('./self-update.cjs');
 
-const root = path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'ClearwaterLauncher');
+const appData = process.platform === 'win32' ? process.env.LOCALAPPDATA || app.getPath('appData') : app.getPath('appData');
+const root = path.join(appData, 'ClearwaterLauncher');
 const settingsFile = inside(root, 'settings.json');
 const logFile = inside(root, 'launcher-game.log');
 const runArgs = inside(root, 'downloads/launch.args');
@@ -53,6 +54,21 @@ async function errorDetails(error) {
 }
 
 async function profileInUse() {
+    if (process.platform === 'linux') {
+        const uid = process.getuid();
+        for (const pid of await fsp.readdir('/proc')) {
+            if (!/^\d+$/.test(pid)) continue;
+            const entry = '/proc/' + pid;
+            try {
+                if ((await fsp.stat(entry)).uid !== uid || (await fsp.readFile(entry + '/comm', 'utf8')).trim() !== 'java') continue;
+                const args = await fsp.readFile(entry + '/cmdline', 'utf8');
+                if (args.split('\0').includes('@' + runArgs)) return true;
+            } catch (error) {
+                if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes(error.code)) throw error;
+            }
+        }
+        return false;
+    }
     const command = String.raw`
         $file = $env:CLEARWATER_PROFILE_ARGS
         Get-CimInstance Win32_Process -Filter "Name='java.exe' OR Name='javaw.exe'" |
