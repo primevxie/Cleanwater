@@ -6,7 +6,21 @@ const {execFile} = require('node:child_process');
 const {promisify} = require('node:util');
 const {prepare} = require('../launcher/src/install.cjs');
 
+const releaseUrl = 'https://api.github.com/repos/primevxie/cleanwaterjars/releases/latest';
+
+function authenticateReleaseCheck(token) {
+    if (!token) return;
+    const fetch = globalThis.fetch;
+    globalThis.fetch = (url, options) => {
+        if (url !== releaseUrl) return fetch(url, options);
+        const headers = new Headers(options?.headers);
+        headers.set('Authorization', 'Bearer ' + token);
+        return fetch(url, {...options, headers, redirect: 'error'});
+    };
+}
+
 async function main() {
+    authenticateReleaseCheck(process.env.GITHUB_TOKEN);
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cleanwater-'));
     const signal = AbortSignal.timeout(12 * 60 * 1000);
     let stage;

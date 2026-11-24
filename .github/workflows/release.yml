@@ -52,6 +52,8 @@ jobs:
             exit 1
           '
       - name: Prepare and verify Minecraft and Java
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: node ../installer/smoke-linux.cjs
       - uses: actions/upload-artifact@v4
         with:
