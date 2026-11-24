@@ -10,7 +10,7 @@ On x86-64, open Konsole or Terminal and run the following command.
 sudo dnf install 'https://github.com/primevxie/Cleanwater/releases/latest/download/cleanwater-launcher-linux-x86_64.rpm'
 ```
 
-Open **Cleanwater Launcher** from the app menu or run `cleanwater-launcher`. Run the install command again to update the launcher. Remove it with `sudo dnf remove cleanwater-launcher`. The game profile lives under `$XDG_CONFIG_HOME/ClearwaterLauncher/profile`, with `~/.config` as the default.
+DNF installs the required desktop libraries and playerctl for the in-game Media Player. Open **Cleanwater Launcher** from the app menu or run `cleanwater-launcher`. Run the install command again to update the launcher. Remove it with `sudo dnf remove cleanwater-launcher`. The game profile lives under `$XDG_CONFIG_HOME/ClearwaterLauncher/profile`, with `~/.config` as the default.
 
 ## Windows
 

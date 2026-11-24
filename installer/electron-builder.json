@@ -30,7 +30,7 @@
     "maintainer": "Clearwater",
     "depends": [
       "gtk3", "nss", "alsa-lib", "libnotify", "libXScrnSaver", "libXtst", "libuuid",
-      "mesa-libgbm", "mesa-dri-drivers", "xdg-utils", "at-spi2-core", "tar", "gzip"
+      "mesa-libgbm", "mesa-dri-drivers", "xdg-utils", "at-spi2-core", "tar", "gzip", "playerctl"
     ]
   },
   "nsis": {
